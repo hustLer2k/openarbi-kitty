@@ -1,6 +1,7 @@
 package install
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -99,5 +100,120 @@ func TestPATHRejectsEditedBlocksAndSymlinks(t *testing.T) {
 	os.Symlink(target, filepath.Join(other, ".bashrc"))
 	if err := ConfigurePATH(other, "", filepath.Join(other, "install"), filepath.Join(other, "bin/openarbi")); err == nil {
 		t.Fatal("symlink shell configuration followed")
+	}
+}
+
+func TestPATHRemoveCreatedFilesAndPreserveUserContent(t *testing.T) {
+	home := t.TempDir()
+	root := filepath.Join(home, "install")
+	bin := filepath.Join(home, "bin/openarbi")
+	preexisting := filepath.Join(home, ".bashrc")
+	if err := os.WriteFile(preexisting, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if err := ConfigurePATH(home, "", root, bin); err != nil {
+			t.Fatal(err)
+		}
+	}
+	userFile := filepath.Join(home, ".zshrc")
+	f, err := os.OpenFile(userFile, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString("# user content\n"); err != nil {
+		f.Close()
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := ConfigurePATH(home, "", root, bin); err != nil {
+		t.Fatal(err)
+	}
+	if err := RemovePATH(root); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{".profile", ".zprofile"} {
+		if _, err := os.Lstat(filepath.Join(home, name)); !os.IsNotExist(err) {
+			t.Fatalf("installer-created %s retained: %v", name, err)
+		}
+	}
+	if raw, err := os.ReadFile(preexisting); err != nil || len(raw) != 0 {
+		t.Fatalf("pre-existing empty file changed or removed: %q %v", raw, err)
+	}
+	if raw, err := os.ReadFile(userFile); err != nil || string(raw) != "# user content\n" {
+		t.Fatalf("user additions changed or removed: %q %v", raw, err)
+	}
+	if _, err := os.Lstat(filepath.Join(root, ".managed-path.json")); !os.IsNotExist(err) {
+		t.Fatalf("PATH receipt retained: %v", err)
+	}
+}
+
+func TestPATHOldReceiptPreservesEmptyFiles(t *testing.T) {
+	home := t.TempDir()
+	root := filepath.Join(home, "install")
+	bin := filepath.Join(home, "bin/openarbi")
+	if err := ConfigurePATH(home, "", root, bin); err != nil {
+		t.Fatal(err)
+	}
+	name := filepath.Join(root, ".managed-path.json")
+	raw, err := os.ReadFile(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var receipt map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &receipt); err != nil {
+		t.Fatal(err)
+	}
+	delete(receipt, "created")
+	raw, err = json.Marshal(receipt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(name, raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := ConfigurePATH(home, "", root, bin); err != nil {
+		t.Fatal(err)
+	}
+	if err := RemovePATH(root); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{".bashrc", ".profile", ".zshrc", ".zprofile"} {
+		if raw, err := os.ReadFile(filepath.Join(home, name)); err != nil || len(raw) != 0 {
+			t.Fatalf("old receipt invented creation provenance for %s: %q %v", name, raw, err)
+		}
+	}
+}
+
+func TestPATHFileTransactionRestoresDeletionOnFailure(t *testing.T) {
+	dir := t.TempDir()
+	name := filepath.Join(dir, ".bashrc")
+	before := []byte("managed content\n")
+	if err := os.WriteFile(name, before, 0600); err != nil {
+		t.Fatal(err)
+	}
+	obstruction := filepath.Join(dir, "obstruction")
+	if err := os.Mkdir(obstruction, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(obstruction, "keep"), []byte("keep"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := applyFiles([]fileChange{
+		{name: name, before: before, mode: 0600, existed: true, remove: true},
+		{name: obstruction, existed: true, remove: true},
+	}); err == nil {
+		t.Fatal("failed deletion accepted")
+	}
+	if raw, err := os.ReadFile(name); err != nil || string(raw) != string(before) {
+		t.Fatalf("deleted file was not restored: %q %v", raw, err)
+	}
+	if info, err := os.Stat(name); err != nil || info.Mode().Perm() != 0600 {
+		t.Fatalf("restored file mode changed: %v %v", info, err)
+	}
+	if raw, err := os.ReadFile(filepath.Join(obstruction, "keep")); err != nil || string(raw) != "keep" {
+		t.Fatalf("obstruction changed: %q %v", raw, err)
 	}
 }

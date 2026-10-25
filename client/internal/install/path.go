@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -15,6 +16,8 @@ const pathEnd = "# <<< OpenArbi managed PATH <<<"
 type pathReceipt struct {
 	Block string   `json:"block"`
 	Files []string `json:"files"`
+	// Older receipts lack creation provenance; their files are retained.
+	Created []string `json:"created,omitempty"`
 }
 
 // ConfigurePATH adds one narrowly delimited POSIX block to Bash and Zsh startup
@@ -63,10 +66,14 @@ func ConfigurePATH(home, zdir, root, bin string) error {
 		return err
 	}
 	var changes []fileChange
+	var created []string
 	for _, name := range files {
 		before, mode, exists, err := readRegular(name)
 		if err != nil {
 			return err
+		}
+		if !exists || slices.Contains(old.Created, name) {
+			created = append(created, name)
 		}
 		if strings.Contains(string(before), pathStart) || strings.Contains(string(before), pathEnd) {
 			if strings.Count(string(before), block) != 1 {
@@ -74,9 +81,9 @@ func ConfigurePATH(home, zdir, root, bin string) error {
 			}
 			continue
 		}
-		changes = append(changes, fileChange{name, before, append(append([]byte{}, before...), []byte(block)...), mode, exists})
+		changes = append(changes, fileChange{name: name, before: before, after: append(append([]byte{}, before...), []byte(block)...), mode: mode, existed: exists})
 	}
-	raw, err := json.Marshal(pathReceipt{block, files})
+	raw, err := json.Marshal(pathReceipt{Block: block, Files: files, Created: created})
 	if err != nil {
 		return err
 	}
@@ -84,17 +91,17 @@ func ConfigurePATH(home, zdir, root, bin string) error {
 	if err != nil {
 		return err
 	}
-	changes = append(changes, fileChange{receiptPath, before, append(raw, '\n'), mode, exists})
+	changes = append(changes, fileChange{name: receiptPath, before: before, after: append(raw, '\n'), mode: mode, existed: exists})
 	return applyFiles(changes)
 }
 func RemovePATH(root string) error {
 	receipt := filepath.Join(root, ".managed-path.json")
-	raw, err := os.ReadFile(receipt)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
+	raw, receiptMode, exists, err := readRegular(receipt)
 	if err != nil {
 		return err
+	}
+	if !exists {
+		return nil
 	}
 	var r pathReceipt
 	if err = json.Unmarshal(raw, &r); err != nil {
@@ -119,12 +126,13 @@ func RemovePATH(root string) error {
 		if strings.Count(text, r.Block) != 1 {
 			return fmt.Errorf("managed PATH block was edited in %s; refusing to remove user changes", name)
 		}
-		changes = append(changes, fileChange{name, before, []byte(strings.Replace(text, r.Block, "", 1)), mode, true})
+		after := []byte(strings.Replace(text, r.Block, "", 1))
+		changes = append(changes, fileChange{name: name, before: before, after: after, mode: mode, existed: true,
+			remove: len(after) == 0 && slices.Contains(r.Created, name)})
 	}
-	if err = applyFiles(changes); err != nil {
-		return err
-	}
-	return os.Remove(receipt)
+	// Receipt removal belongs to the same rollback transaction as shell files.
+	changes = append(changes, fileChange{name: receipt, before: raw, mode: receiptMode, existed: true, remove: true})
+	return applyFiles(changes)
 }
 
 type fileChange struct {
@@ -132,6 +140,7 @@ type fileChange struct {
 	before, after []byte
 	mode          os.FileMode
 	existed       bool
+	remove        bool
 }
 
 func readRegular(name string) ([]byte, os.FileMode, bool, error) {
@@ -189,7 +198,13 @@ func applyFiles(changes []fileChange) (result error) {
 		}
 	}()
 	for _, c := range changes {
-		if err := atomicFile(c.name, c.after, c.mode); err != nil {
+		var err error
+		if c.remove {
+			err = os.Remove(c.name)
+		} else {
+			err = atomicFile(c.name, c.after, c.mode)
+		}
+		if err != nil {
 			return err
 		}
 		applied = append(applied, c)
