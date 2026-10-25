@@ -26,7 +26,8 @@ worker requires explicit recovery.
 | Local Bash/Zsh tab | Ctrl+Shift+S | |
 | Room picker | Ctrl+Shift+P | |
 
-All shortcuts belong to the application. Ordinary letters, Ctrl+C, Ctrl+D and
+All shortcuts belong to the application. On macOS, Control+Shift shortcuts also
+accept their physical US-key positions when using a non-Latin input source. Ordinary letters, Ctrl+C, Ctrl+D and
 Tab remain available to the foreground program. Local shells retain your shell
 configuration and initialize the bundled Starship prompt in OpenArbi only.
 

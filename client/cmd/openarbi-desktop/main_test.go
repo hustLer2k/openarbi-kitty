@@ -13,7 +13,16 @@ import (
 )
 
 func TestEnsureBoundsFirstProbeWithCallerDeadline(t *testing.T) {
-	directory := t.TempDir()
+	// t.TempDir includes the test name, exceeding Darwin's Unix socket limit.
+	directory, err := os.MkdirTemp("", "oa-probe-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.RemoveAll(directory); err != nil {
+			t.Error(err)
+		}
+	})
 	if err := os.Chmod(directory, 0700); err != nil {
 		t.Fatal(err)
 	}

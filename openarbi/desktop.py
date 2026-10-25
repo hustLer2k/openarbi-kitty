@@ -1,5 +1,6 @@
 """Kitty integration. Runs using Kitty's bundled Python, never system Python."""
 import fcntl
+import base64
 import json
 import os
 from pathlib import Path
@@ -10,6 +11,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import uuid
 
 from kittens.tui.handler import result_handler
 
@@ -118,6 +120,33 @@ def kitty_windows(path, device_id):
     return found
 
 
+def platform_window_args():
+    # Kitty omits X11/Wayland identity flags from its macOS CLI entirely.
+    if sys.platform == 'darwin':
+        return []
+    if sys.platform.startswith('linux'):
+        return ['--class', 'OpenArbi', '--name', 'OpenArbi']
+    raise RuntimeError('OpenArbi supports Linux and macOS')
+
+
+def instance_group(device_id):
+    # Preserve all UUID bits while fitting Darwin's 104-byte socket path with
+    # Kitty's per-user cache directory and its own IPC filename prefix.
+    return 'oa-' + base64.urlsafe_b64encode(uuid.UUID(device_id).bytes).decode().rstrip('=')
+
+
+def shortcut_keys(key):
+    keys = [key]
+    if sys.platform == 'darwin' and key.startswith('ctrl+shift+'):
+        # App-local physical aliases keep documented Control shortcuts usable
+        # with non-Latin input sources. Ordinary text keys are never remapped.
+        native = {'q': 12, 'w': 13, 'e': 14, 'r': 15, 't': 17, 'n': 45,
+                  's': 1, 'p': 35, '1': 18, '2': 19, '3': 20, '4': 21,
+                  '5': 23, '6': 22, '7': 26, '8': 28, '9': 25}
+        keys.append('ctrl+shift+' + hex(native[key.rsplit('+', 1)[1]]))
+    return keys
+
+
 def gui_main():
     subprocess.run([str(bundle() / 'bin/openarbi-desktop'), '--directory', str(directory()), 'ensure'], check=True)
     # Serialize launch reconciliation through the actual GUI acknowledgement.
@@ -146,22 +175,26 @@ def gui_main():
         state = result['workspace']
         with tempfile.NamedTemporaryFile(mode='w', prefix='session-', dir=directory(), delete=False) as session:
             session.write(session_text(state, result['windows']))
-        args = [str(bundle() / 'bin/kitty'), '--single-instance', '--instance-group', 'OpenArbi-' + state['device_id'],
-                '--class', 'OpenArbi', '--name', 'OpenArbi', '--title', 'OpenArbi', '--listen-on', 'unix:' + str(endpoint),
+        args = [str(bundle() / 'bin/kitty'), '--single-instance', '--instance-group', instance_group(state['device_id']),
+                '--title', 'OpenArbi', '--listen-on', 'unix:' + str(endpoint),
                 '--config', str(bundle() / 'share/openarbi/theme/kitty.conf'), '-o', 'allow_remote_control=socket-only',
                 '-o', 'watcher=' + str(bundle() / 'share/openarbi/desktop.py'),
                 '-o', 'confirm_os_window_close=0', '-o', 'macos_quit_when_last_window_closed=yes', '--session', session.name]
+        args += platform_window_args()
         action_file = shlex.quote(str(bundle() / 'share/openarbi/desktop.py'))
         mappings = {'ctrl+shift+t': 'new-tab', 'ctrl+shift+n': 'new-window', 'ctrl+shift+w': 'close-tab',
                     'ctrl+shift+r': 'reopen-tab', 'ctrl+shift+s': 'local-tab', 'ctrl+shift+p': 'picker',
                     'cmd+t': 'new-tab', 'cmd+n': 'new-window', 'cmd+w': 'close-tab', 'cmd+shift+t': 'reopen-tab'}
         for key, action in mappings.items():
-            args += ['-o', f'map {key} kitten {action_file} {action}']
+            for variant in shortcut_keys(key):
+                args += ['-o', f'map {variant} kitten {action_file} {action}']
         for key, action in {'ctrl+shift+q': 'previous_tab', 'ctrl+shift+e': 'next_tab', 'cmd+shift+[': 'previous_tab', 'cmd+shift+]': 'next_tab'}.items():
-            args += ['-o', f'map {key} {action}']
+            for variant in shortcut_keys(key):
+                args += ['-o', f'map {variant} {action}']
         for number in range(1, 10):
             for key in (f'ctrl+shift+{number}', f'cmd+{number}'):
-                args += ['-o', f'map {key} goto_tab {number}']
+                for variant in shortcut_keys(key):
+                    args += ['-o', f'map {variant} goto_tab {number}']
         child = subprocess.Popen(args, start_new_session=True)
         try:
             deadline = time.monotonic() + 10

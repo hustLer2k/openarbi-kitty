@@ -42,7 +42,9 @@ preserved rather than adopted by filename alone.
 Releases stage into separate directories and are checksum-verified, safely
 extracted and smoke-tested before an atomic `current` symlink switch. Corruption,
 cancellation, failed validation and unsafe tar entries preserve the previous
-release. Archive links, duplicate files and special files are rejected. An OS
+release. Archive links other than seven exact links in the pinned macOS Kitty bundle,
+duplicate files and special files are rejected. Approved links are created only
+after extraction and must resolve within the embedded Kitty app. An OS
 lock excludes concurrent installations; previous versions remain available.
 
 Quit OpenArbi before updating or uninstalling. Rerun the bootstrap or use:
@@ -75,8 +77,11 @@ managed PATH blocks; edited blocks are reported for manual repair.
 
 ## Build unpublished artifacts
 
-Build hosts need the Go version in `client/go.mod` and Python 3.12+. macOS builds
-require a native Mac with hdiutil/codesign. Use a reviewed public checkout:
+Build hosts need the Go version in `client/go.mod` and Python 3.12+. Check
+`python3 --version` first: macOS may select an older Apple Python even when a newer
+interpreter is installed. macOS builds require a native Mac with hdiutil/codesign
+and Xcode Command Line Tools (`xcrun clang`) for the native signed launcher.
+Use a reviewed public checkout:
 
 ```sh
 python3 openarbi/build-release.py --version vX.Y.Z --platform linux-amd64 --output /tmp/openarbi-release
@@ -87,8 +92,10 @@ python3 openarbi/build-release.py --version vX.Y.Z --platform darwin-arm64 --out
 The builder reads only public files. `upstream.lock.json` and `codex.lock.json`
 pin downloaded artifacts; all are verified. Bundles contain native client,
 broker, installer, Kitty, Codex, Starship, fonts, theme, artwork, chime, licenses
-and corresponding public Kitty source. Approved upstream links are flattened to
-ordinary files. Mac app bundles are ad-hoc signed and verified; no notarization
+and corresponding public Kitty source. Linux upstream links are flattened;
+macOS framework links retain the layout required by code signing. The app launcher
+is native Mach-O so its signature survives archive extraction without extended
+attributes. Mac app bundles are ad-hoc signed and verified; no notarization
 or Gatekeeper bypass is claimed. Outputs are a versioned platform tarball, native
 platform installer, versioned `release.json` and `SHA256SUMS`. Building does not publish.
 

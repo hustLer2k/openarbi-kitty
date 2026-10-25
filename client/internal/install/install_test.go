@@ -56,6 +56,17 @@ func checksum(t *testing.T, name string) string {
 	sum := sha256.Sum256(raw)
 	return hex.EncodeToString(sum[:])
 }
+
+// resolvedPath compares actual filesystem targets even when the host temporary
+// directory contains a symlink (for example macOS /var -> /private/var).
+func resolvedPath(t *testing.T, path string) string {
+	t.Helper()
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resolved
+}
 func options(t *testing.T, sum string) Options {
 	t.Helper()
 	base := filepath.Join(t.TempDir(), "home with spaces")
@@ -76,7 +87,7 @@ func TestInstallUpdateRollbackUninstall(t *testing.T) {
 		}
 		return s
 	}
-	if target() != first {
+	if target() != resolvedPath(t, first) {
 		t.Fatal("first release not active")
 	}
 	o.Version = "v1.0.1"
@@ -84,7 +95,7 @@ func TestInstallUpdateRollbackUninstall(t *testing.T) {
 	if _, err = InstallArchive(t.Context(), o, archive); err == nil {
 		t.Fatal("failed validation accepted")
 	}
-	if target() != first {
+	if target() != resolvedPath(t, first) {
 		t.Fatal("failed update replaced old release")
 	}
 	o.Validate = nil
@@ -92,7 +103,7 @@ func TestInstallUpdateRollbackUninstall(t *testing.T) {
 	if _, err = InstallArchive(t.Context(), o, archive); err == nil {
 		t.Fatal("corrupt checksum accepted")
 	}
-	if target() != first {
+	if target() != resolvedPath(t, first) {
 		t.Fatal("corrupt update replaced old release")
 	}
 	o.SHA256 = sum
@@ -101,14 +112,14 @@ func TestInstallUpdateRollbackUninstall(t *testing.T) {
 	if _, err = InstallArchive(ctx, o, archive); err == nil {
 		t.Fatal("cancelled update accepted")
 	}
-	if target() != first {
+	if target() != resolvedPath(t, first) {
 		t.Fatal("cancelled update replaced old release")
 	}
 	second, err := InstallArchive(t.Context(), o, archive)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if target() != second || first == second {
+	if target() != resolvedPath(t, second) || first == second {
 		t.Fatal("update did not switch atomically")
 	}
 	if _, err = os.Stat(first); err != nil {
@@ -196,7 +207,7 @@ func TestTruncatedArchivePreservesPrevious(t *testing.T) {
 		t.Fatal("truncated archive accepted")
 	}
 	got, err := filepath.EvalSymlinks(filepath.Join(o.Root, "current"))
-	if err != nil || got != old {
+	if err != nil || got != resolvedPath(t, old) {
 		t.Fatal("previous release not retained")
 	}
 }
@@ -233,7 +244,7 @@ func TestActivationFailurePreservesPrevious(t *testing.T) {
 		t.Fatal("activation obstruction accepted")
 	}
 	current, err := filepath.EvalSymlinks(filepath.Join(o.Root, "current"))
-	if err != nil || current != old {
+	if err != nil || current != resolvedPath(t, old) {
 		t.Fatal("activation failure lost previous release")
 	}
 }
@@ -265,7 +276,7 @@ func TestStartupFailureRollsBackAndRestartsOld(t *testing.T) {
 		stopped = true
 		return func() error {
 			current, e := filepath.EvalSymlinks(filepath.Join(o.Root, "current"))
-			if e != nil || current != old {
+			if e != nil || current != resolvedPath(t, old) {
 				t.Fatal("broker restarted before restoring previous payload")
 			}
 			restored = true
@@ -274,7 +285,7 @@ func TestStartupFailureRollsBackAndRestartsOld(t *testing.T) {
 	}
 	o.AfterActivate = func(_ context.Context, stage string) error {
 		current, e := filepath.EvalSymlinks(filepath.Join(o.Root, "current"))
-		if e != nil || current != stage {
+		if e != nil || current != resolvedPath(t, stage) {
 			t.Fatal("new broker started before payload switch")
 		}
 		return errors.New("new broker failed")

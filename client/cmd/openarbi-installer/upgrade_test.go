@@ -30,8 +30,23 @@ func TestUpgradeLockRejectsSymlink(t *testing.T) {
 		t.Fatal("symlink lock accepted")
 	}
 }
+func socketTempDir(t *testing.T) string {
+	t.Helper()
+	// Keep the pathname within Darwin's Unix socket limit; t.TempDir embeds
+	// the full test name below the already-long system temporary directory.
+	dir, err := os.MkdirTemp("", "oa-gui-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.RemoveAll(dir); err != nil {
+			t.Error(err)
+		}
+	})
+	return dir
+}
 func TestReconcileMissingRefusedAndForeignSockets(t *testing.T) {
-	dir := t.TempDir()
+	dir := socketTempDir(t)
 	if err := reconcileGUI(t.Context(), "unused", dir, false); err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +67,7 @@ func TestReconcileMissingRefusedAndForeignSockets(t *testing.T) {
 	}
 }
 func TestReconcileRefusesLiveKittyWindows(t *testing.T) {
-	dir := t.TempDir()
+	dir := socketTempDir(t)
 	socket := filepath.Join(dir, "kitty.sock")
 	listener, err := net.ListenUnix("unix", &net.UnixAddr{Name: socket, Net: "unix"})
 	if err != nil {

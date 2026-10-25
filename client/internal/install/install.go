@@ -94,9 +94,24 @@ func Download(ctx context.Context, rawURL, digest, destination string) error {
 	return nil
 }
 
-// Extract accepts only directories and ordinary files. Release construction
-// dereferences approved upstream links; device nodes and archive links are rejected.
+// Extract accepts directories, ordinary files and the exact pinned macOS
+// framework links. Links are created only after all file writes and CRC checks.
+// Staging must begin empty so no archive write can follow a preexisting link.
 func Extract(ctx context.Context, archive, destination string) error {
+	info, err := os.Lstat(destination)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return errors.New("extraction destination must be a real directory")
+	}
+	entries, err := os.ReadDir(destination)
+	if err != nil {
+		return err
+	}
+	if len(entries) != 0 {
+		return errors.New("extraction destination must be empty")
+	}
 	f, err := os.Open(archive)
 	if err != nil {
 		return err
@@ -109,6 +124,9 @@ func Extract(ctx context.Context, archive, destination string) error {
 	defer gz.Close()
 	reader := tar.NewReader(gz)
 	var total int64
+	seen := map[string]byte{}
+	parents := map[string]bool{}
+	links := map[string]string{}
 	for {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -130,12 +148,31 @@ func Extract(ctx context.Context, archive, destination string) error {
 		if strings.Contains(name, `\`) || !filepath.IsLocal(name) || path.Clean(name) != name {
 			return fmt.Errorf("unsafe archive path %q", name)
 		}
+		if _, exists := seen[name]; exists {
+			return fmt.Errorf("duplicate archive entry %q", name)
+		}
+		for parent := path.Dir(name); parent != "."; parent = path.Dir(parent) {
+			if kind, exists := seen[parent]; exists && kind != tar.TypeDir {
+				return fmt.Errorf("archive entry %q has a non-directory ancestor", name)
+			}
+			parents[parent] = true
+		}
+		if h.Typeflag != tar.TypeDir && parents[name] {
+			return fmt.Errorf("archive entry %q conflicts with earlier children", name)
+		}
+		seen[name] = h.Typeflag
 		target := filepath.Join(destination, filepath.FromSlash(name))
 		switch h.Typeflag {
 		case tar.TypeDir:
 			if err = os.MkdirAll(target, 0755); err != nil {
 				return err
 			}
+		case tar.TypeSymlink:
+			expected, allowed := macBundleLinks[name]
+			if !allowed || h.Linkname != expected {
+				return fmt.Errorf("unapproved archive link %q", name)
+			}
+			links[name] = h.Linkname
 		case tar.TypeReg:
 			total += h.Size
 			if h.Size < 0 || total > 4<<30 {
@@ -161,12 +198,17 @@ func Extract(ctx context.Context, archive, destination string) error {
 				return closeErr
 			}
 		default:
-			return fmt.Errorf("unsupported archive entry %q (links and special files are forbidden)", name)
+			return fmt.Errorf("unsupported archive entry %q (unapproved links and special files are forbidden)", name)
 		}
 	}
 	// tar may stop before the gzip trailer; drain to verify its CRC and detect truncation.
-	_, err = io.Copy(io.Discard, gz)
-	return err
+	if _, err = io.Copy(io.Discard, gz); err != nil {
+		return err
+	}
+	if err = ctx.Err(); err != nil {
+		return err
+	}
+	return materializeMacLinks(destination, links)
 }
 
 func lock(root string) (*os.File, error) {

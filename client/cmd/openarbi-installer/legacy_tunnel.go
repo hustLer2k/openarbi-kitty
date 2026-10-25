@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -23,6 +24,12 @@ const legacyLabel = "io.openarbi.revenge-tunnel"
 
 func legacySSH(executable string) []string {
 	return []string{executable, "-N", "-T", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes", "-o", "ExitOnForwardFailure=yes", "-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=3", "-o", "ConnectTimeout=10", "-o", "ControlMaster=no", "-o", "ControlPath=none", "-o", "ForkAfterAuthentication=no", "-L", "127.0.0.1:29090:127.0.0.1:29090", "-L", "127.0.0.1:29222:127.0.0.1:29222", "revenge"}
+}
+
+// The original macOS managed template predates the explicit foreground option.
+// Keep its exact argv separate: arbitrary option removal is not ownership proof.
+func legacyMacOriginalSSH() []string {
+	return []string{"/usr/bin/ssh", "-N", "-T", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes", "-o", "ExitOnForwardFailure=yes", "-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=3", "-o", "ConnectTimeout=10", "-o", "ControlMaster=no", "-o", "ControlPath=none", "-L", "127.0.0.1:29090:127.0.0.1:29090", "-L", "127.0.0.1:29222:127.0.0.1:29222", "revenge"}
 }
 func legacyUnitText(ssh string) string {
 	return "[Unit]\nDescription=OpenArbi private revenge tunnel\nAfter=network-online.target\n\n[Service]\nType=simple\nExecStart=" + strings.Join(legacySSH(ssh), " ") + "\nRestart=always\nRestartSec=5\n\n[Install]\nWantedBy=default.target\n"
@@ -124,7 +131,8 @@ func retireLegacyTunnel(ctx context.Context, home, config, root, platform string
 			return nil, errors.New("active legacy tunnel has no verified process")
 		}
 	} else {
-		if err = validateLegacyPlist(data, home); err != nil {
+		expectedArgs, err := validateLegacyPlist(data, home)
+		if err != nil {
 			return nil, err
 		}
 		output, e := run(ctx, "launchctl", "print", fmt.Sprintf("gui/%d/%s", os.Getuid(), legacyLabel))
@@ -145,7 +153,7 @@ func retireLegacyTunnel(ctx context.Context, home, config, root, platform string
 					actual = append(actual, value)
 				}
 			}
-			if !reflect.DeepEqual(actual, legacySSH("/usr/bin/ssh")) {
+			if !slices.Equal(actual, expectedArgs) {
 				return nil, errors.New("legacy LaunchAgent loaded arguments differ; preserved")
 			}
 		}
@@ -237,37 +245,40 @@ func plistValue(n plistNode) (any, error) {
 		return nil, errors.New("unsupported legacy plist value")
 	}
 }
-func validateLegacyPlist(data []byte, home string) error {
+func validateLegacyPlist(data []byte, home string) ([]string, error) {
 	var root plistNode
 	if err := xml.Unmarshal(data, &root); err != nil {
-		return errors.New("invalid legacy LaunchAgent; preserved")
+		return nil, errors.New("invalid legacy LaunchAgent; preserved")
 	}
 	if root.XMLName.Local != "plist" || len(root.Children) != 1 || root.Children[0].XMLName.Local != "dict" {
-		return errors.New("invalid legacy LaunchAgent structure")
+		return nil, errors.New("invalid legacy LaunchAgent structure")
 	}
 	nodes := root.Children[0].Children
 	if len(nodes)%2 != 0 {
-		return errors.New("invalid legacy LaunchAgent dictionary")
+		return nil, errors.New("invalid legacy LaunchAgent dictionary")
 	}
 	actual := map[string]any{}
 	for i := 0; i < len(nodes); i += 2 {
 		if nodes[i].XMLName.Local != "key" {
-			return errors.New("invalid legacy LaunchAgent key")
+			return nil, errors.New("invalid legacy LaunchAgent key")
 		}
 		key := nodes[i].Text
 		if _, exists := actual[key]; exists {
-			return errors.New("duplicate legacy LaunchAgent key")
+			return nil, errors.New("duplicate legacy LaunchAgent key")
 		}
 		value, err := plistValue(nodes[i+1])
 		if err != nil {
-			return err
+			return nil, err
 		}
 		actual[key] = value
 	}
 	logs := filepath.Join(home, "Library/Logs/OpenArbi")
 	expected := map[string]any{"Label": legacyLabel, "ProgramArguments": legacySSH("/usr/bin/ssh"), "RunAtLoad": true, "KeepAlive": true, "ThrottleInterval": 10, "ProcessType": "Background", "StandardOutPath": filepath.Join(logs, "revenge-tunnel.stdout.log"), "StandardErrorPath": filepath.Join(logs, "revenge-tunnel.stderr.log")}
-	if !reflect.DeepEqual(actual, expected) {
-		return errors.New("legacy LaunchAgent differs from managed template; preserved")
+	for _, argv := range [][]string{legacySSH("/usr/bin/ssh"), legacyMacOriginalSSH()} {
+		expected["ProgramArguments"] = argv
+		if reflect.DeepEqual(actual, expected) {
+			return argv, nil
+		}
 	}
-	return nil
+	return nil, errors.New("legacy LaunchAgent differs from managed templates; preserved")
 }

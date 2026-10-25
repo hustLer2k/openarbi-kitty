@@ -22,6 +22,37 @@ def window(number, tab='tab', overlay=None):
 
 
 class Hooks(unittest.TestCase):
+    def test_mac_control_shortcuts_have_app_local_physical_aliases(self):
+        module = load_desktop()
+        with patch.object(module.sys, 'platform', 'darwin'):
+            self.assertEqual(module.shortcut_keys('ctrl+shift+s'), ['ctrl+shift+s', 'ctrl+shift+0x1'])
+            for key in ('q', 'w', 'e', 'r', 't', 'n', 'p', *'123456789'):
+                self.assertEqual(len(module.shortcut_keys('ctrl+shift+' + key)), 2)
+            for key in ('q', 'w', 'e', 'r', 'ctrl+c', 'ctrl+d', 'tab', 'cmd+t'):
+                self.assertEqual(module.shortcut_keys(key), [key])
+        with patch.object(module.sys, 'platform', 'linux'):
+            self.assertEqual(module.shortcut_keys('ctrl+shift+s'), ['ctrl+shift+s'])
+
+    def test_instance_group_preserves_identity_within_darwin_socket_limit(self):
+        module = load_desktop()
+        ident = '01234567-89ab-cdef-0123-456789abcdef'
+        group = module.instance_group(ident)
+        self.assertEqual(group, module.instance_group(ident))
+        self.assertNotEqual(group, module.instance_group('11234567-89ab-cdef-0123-456789abcdef'))
+        path = '/var/folders/dv/ngfnfzcx48d75l6gz1273f3m0000gn/C/kitty-ipc-501-' + group
+        self.assertLess(len(path.encode()), 104)
+        self.assertEqual(module.base64.urlsafe_b64decode(group[3:] + '=='), module.uuid.UUID(ident).bytes)
+
+    def test_platform_window_flags_match_kitty_cli(self):
+        module = load_desktop()
+        with patch.object(module.sys, 'platform', 'darwin'):
+            self.assertEqual(module.platform_window_args(), [])
+        with patch.object(module.sys, 'platform', 'linux'):
+            self.assertEqual(module.platform_window_args(), ['--class', 'OpenArbi', '--name', 'OpenArbi'])
+        with patch.object(module.sys, 'platform', 'win32'):
+            with self.assertRaises(RuntimeError):
+                module.platform_window_args()
+
     def setUp(self):
         self.module = load_desktop()
         self.temp = tempfile.TemporaryDirectory()

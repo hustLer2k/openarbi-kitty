@@ -66,11 +66,18 @@ func recoverMigration(root string) error {
 	if filepath.Dir(j.Release) != filepath.Join(root, "releases") {
 		return errors.New("invalid migration journal release")
 	}
+	// Normalize parent aliases such as macOS /var -> /private/var on both
+	// sides. Do not resolve the release itself: a substituted release symlink
+	// must not make an outside directory count as the activated payload.
+	releases, err := filepath.EvalSymlinks(filepath.Join(root, "releases"))
+	if err != nil {
+		return fmt.Errorf("resolve migration releases directory: %w", err)
+	}
 	current, err := filepath.EvalSymlinks(filepath.Join(root, "current"))
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	complete := current == j.Release
+	complete := current == filepath.Join(releases, filepath.Base(j.Release))
 	for path, link := range j.Links {
 		if !filepath.IsAbs(path) || link.Previous == "" || !managedTarget(root, link.Target) {
 			return errors.New("invalid migration journal link")

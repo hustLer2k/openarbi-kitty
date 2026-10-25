@@ -77,6 +77,8 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--allow-dirty-tests", action="store_true", help="allow unpublished fixture builds from an uncommitted checkout")
     args = parser.parse_args()
+    if sys.version_info < (3, 12):
+        parser.error("release builds require Python 3.12 or newer (end users do not need Python)")
     if not re.fullmatch(r"v?\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?", args.version):
         parser.error("version must be explicit semver")
     if args.platform == "darwin-arm64" and sys.platform != "darwin":
@@ -119,7 +121,8 @@ def main():
             run("hdiutil", "attach", "-readonly", "-nobrowse", "-mountpoint", str(mount), str(kitty_package))
             try:
                 kitty_dir.mkdir(parents=True)
-                shutil.copytree(mount / "kitty.app", kitty_dir / "kitty.app", symlinks=False)
+                # Framework links are part of Apple's signed bundle format.
+                shutil.copytree(mount / "kitty.app", kitty_dir / "kitty.app", symlinks=True)
             finally:
                 run("hdiutil", "detach", str(mount))
             kitty_binary = "lib/kitty/kitty.app/Contents/MacOS/kitty"
@@ -162,21 +165,25 @@ def main():
         (bundle / "share/openarbi/release.json").write_text(json.dumps({"version": args.version, "platform": args.platform, "unpublished_dirty_fixture": dirty, "source_commit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()}, indent=2) + "\n")
         if args.platform == "darwin-arm64":
             contents = bundle / "OpenArbi.app/Contents"
-            write_executable(contents / "MacOS/openarbi", '#!/bin/sh\nset -eu\nbase=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)\nbase=$(CDPATH= cd -- "$base/../../.." && pwd -P)\nexec "$base/bin/openarbi" "$@"\n')
+            (contents / "MacOS").mkdir(parents=True)
+            # Script signatures live in xattrs, which tar/native extraction does
+            # not preserve. A Mach-O launcher carries its signature in the file.
+            run("xcrun", "clang", "-arch", "arm64", "-Os", "-Wall", "-Wextra", "-Werror",
+                str(ROOT / "openarbi/macos-launcher.c"), "-o", str(contents / "MacOS/openarbi"))
             shutil.copytree(bundle / "share/openarbi/assets/fonts", contents / "Resources/fonts")
-            (contents / "Info.plist").write_bytes(plistlib.dumps({"CFBundleName": "OpenArbi", "CFBundleDisplayName": "OpenArbi", "CFBundleIdentifier": "com.openarbi.desktop", "CFBundleVersion": args.version.lstrip("v"), "CFBundleExecutable": "openarbi", "CFBundlePackageType": "APPL", "NSHighResolutionCapable": True, "ATSApplicationFontsPath": "Resources/fonts", "NSRequiresAquaSystemAppearance": False}))
+            (contents / "Info.plist").write_bytes(plistlib.dumps({"CFBundleName": "OpenArbi", "CFBundleDisplayName": "OpenArbi", "CFBundleIdentifier": "com.openarbi.desktop", "CFBundleVersion": args.version.lstrip("v"), "CFBundleExecutable": "openarbi", "CFBundlePackageType": "APPL", "NSHighResolutionCapable": True, "ATSApplicationFontsPath": "fonts/", "NSRequiresAquaSystemAppearance": False}))
             embedded = kitty_dir / "kitty.app/Contents"
             shutil.copytree(bundle / "share/openarbi/assets/fonts", embedded / "Resources/OpenArbiFonts")
             embedded_info = plistlib.loads((embedded / "Info.plist").read_bytes())
-            embedded_info.update({"CFBundleName": "OpenArbi", "CFBundleDisplayName": "OpenArbi", "ATSApplicationFontsPath": "Resources/OpenArbiFonts", "NSRequiresAquaSystemAppearance": False})
+            embedded_info.update({"CFBundleName": "OpenArbi", "CFBundleDisplayName": "OpenArbi", "CFBundleIdentifier": "com.openarbi.terminal", "ATSApplicationFontsPath": "OpenArbiFonts/", "NSRequiresAquaSystemAppearance": False})
             (embedded / "Info.plist").write_bytes(plistlib.dumps(embedded_info))
             run("codesign", "--force", "--deep", "--sign", "-", str(kitty_dir / "kitty.app"))
             run("codesign", "--verify", "--deep", "--strict", str(kitty_dir / "kitty.app"))
             run("codesign", "--force", "--deep", "--sign", "-", str(bundle / "OpenArbi.app"))
             run("codesign", "--verify", "--deep", "--strict", str(bundle / "OpenArbi.app"))
         artifact = output / f"openarbi-{args.version}-{args.platform}.tar.gz"
-        # The native installer rejects all archive links. Dereference trusted
-        # upstream links during release construction after data-filter validation.
+        # Linux upstream links are flattened. Mac framework links must survive
+        # signing and extraction; the installer permits only exact pinned links.
         epoch = int(subprocess.check_output(["git", "show", "-s", "--format=%ct", "HEAD"], cwd=ROOT))
         def normalize(info):
             info.uid = info.gid = 0
@@ -184,7 +191,7 @@ def main():
             info.mtime = epoch
             return info
         with artifact.open("wb") as raw, gzip.GzipFile(filename="", mode="wb", fileobj=raw, mtime=epoch) as compressed:
-            with tarfile.open(fileobj=compressed, mode="w", dereference=True) as tar:
+            with tarfile.open(fileobj=compressed, mode="w", dereference=args.platform != "darwin-arm64") as tar:
                 for child in sorted(bundle.iterdir()):
                     tar.add(child, arcname=child.name, filter=normalize)
         installer = output / f"openarbi-installer-{args.platform}"

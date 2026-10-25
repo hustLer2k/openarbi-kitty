@@ -85,6 +85,10 @@ func inspectLegacy(root string) (*legacyInstall, error) {
 	if err != nil || !info.IsDir() {
 		return nil, errors.New("legacy release directory is not regular")
 	}
+	resolvedRelease, err := filepath.EvalSymlinks(release)
+	if err != nil {
+		return nil, fmt.Errorf("resolve legacy release directory: %w", err)
+	}
 	data, err := os.ReadFile(receipt)
 	if err != nil {
 		return nil, err
@@ -141,7 +145,7 @@ func inspectLegacy(root string) (*legacyInstall, error) {
 					return errors.New("legacy link changed")
 				}
 				resolved, err := filepath.EvalSymlinks(name)
-				if err != nil || !strings.HasPrefix(resolved, release+string(filepath.Separator)) {
+				if err != nil || !strings.HasPrefix(resolved, resolvedRelease+string(filepath.Separator)) {
 					return errors.New("legacy link escapes release")
 				}
 			case expected.SHA256 != "":
@@ -173,7 +177,7 @@ func inspectLegacy(root string) (*legacyInstall, error) {
 			}
 			name := filepath.Join(release, relative)
 			resolved, err := filepath.EvalSymlinks(name)
-			if err != nil || !strings.HasPrefix(resolved, release+string(filepath.Separator)) {
+			if err != nil || !strings.HasPrefix(resolved, resolvedRelease+string(filepath.Separator)) {
 				return nil, errors.New("legacy checksum path escapes release")
 			}
 			got, err := fileDigest(name)

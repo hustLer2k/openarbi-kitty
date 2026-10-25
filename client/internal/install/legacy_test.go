@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -59,7 +60,7 @@ func TestLegacyCLIUpgradeAndUninstall(t *testing.T) {
 			}
 			oldCLI := filepath.Join(prefix, "bin/openarbi")
 			resolved, err := filepath.EvalSymlinks(oldCLI)
-			if err != nil || resolved != filepath.Join(stage, "bin/openarbi") {
+			if err != nil || resolved != resolvedPath(t, filepath.Join(stage, "bin/openarbi")) {
 				t.Fatalf("old CLI not migrated: %s %v", resolved, err)
 			}
 			if _, err = os.Stat(filepath.Join(old, "bundle/codex")); err != nil {
@@ -100,7 +101,7 @@ func TestLegacyActivationFailureRestoresOldLinks(t *testing.T) {
 		t.Fatal("failure accepted")
 	}
 	resolved, err := filepath.EvalSymlinks(filepath.Join(o.Root, "bin/openarbi"))
-	if err != nil || resolved != filepath.Join(old, "bundle/openarbi") {
+	if err != nil || resolved != resolvedPath(t, filepath.Join(old, "bundle/openarbi")) {
 		t.Fatalf("legacy link not restored: %s %v", resolved, err)
 	}
 }
@@ -118,7 +119,7 @@ func TestLegacyLinksStayOldUntilActivation(t *testing.T) {
 			old := legacyFixture(t, prefix)
 			o.BeforeActivate = func(context.Context, string, string) (func() error, error) {
 				resolved, err := filepath.EvalSymlinks(filepath.Join(prefix, "bin/openarbi"))
-				if err != nil || resolved != filepath.Join(old, "bundle/openarbi") {
+				if err != nil || resolved != resolvedPath(t, filepath.Join(old, "bundle/openarbi")) {
 					t.Fatalf("old CLI changed before activation: %s %v", resolved, err)
 				}
 				return nil, errors.New("activation cancelled")
@@ -132,7 +133,7 @@ func TestLegacyLinksStayOldUntilActivation(t *testing.T) {
 func TestExternalMigrationJournalCompletesActivatedAndRestoresUnactivated(t *testing.T) {
 	for _, activated := range []bool{false, true} {
 		t.Run(map[bool]string{false: "before-activation", true: "after-activation"}[activated], func(t *testing.T) {
-			root := filepath.Join(t.TempDir(), "install")
+			root := filepath.Join(aliasedTempDir(t), "install")
 			prefix := filepath.Join(t.TempDir(), "old")
 			old := legacyFixture(t, prefix)
 			stage := filepath.Join(root, "releases/new")
@@ -155,7 +156,7 @@ func TestExternalMigrationJournalCompletesActivatedAndRestoresUnactivated(t *tes
 			if activated {
 				want = filepath.Join(stage, "bin/openarbi")
 			}
-			if err != nil || got != want {
+			if err != nil || got != resolvedPath(t, want) {
 				t.Fatalf("wrong recovery target: %s %v", got, err)
 			}
 		})
@@ -188,7 +189,102 @@ func TestReceiptFinalizationFailureDoesNotStartNewBroker(t *testing.T) {
 		t.Fatal("broker started before fallible finalization")
 	}
 	current, err := filepath.EvalSymlinks(filepath.Join(o.Root, "current"))
-	if err != nil || current != old {
+	if err != nil || current != resolvedPath(t, old) {
 		t.Fatal("old payload not restored")
+	}
+}
+
+// Exercise filesystem aliases on every platform, not just macOS /var.
+func aliasedTempDir(t *testing.T) string {
+	t.Helper()
+	alias := filepath.Join(t.TempDir(), "aliased directory")
+	if err := os.Symlink(t.TempDir(), alias); err != nil {
+		t.Fatal(err)
+	}
+	return alias
+}
+
+func TestLegacyReceiptsUnderSymlinkParent(t *testing.T) {
+	for _, schema := range []int{1, 2} {
+		for _, escapes := range []bool{false, true} {
+			t.Run(fmt.Sprintf("schema-%d/escapes-%t", schema, escapes), func(t *testing.T) {
+				root := filepath.Join(aliasedTempDir(t), "install")
+				release := legacyFixture(t, root)
+				receiptPath := filepath.Join(release, "installation.json")
+				raw, err := os.ReadFile(receiptPath)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var receipt legacyReceipt
+				if err := json.Unmarshal(raw, &receipt); err != nil {
+					t.Fatal(err)
+				}
+				receipt.Schema = schema
+				target := "openarbi"
+				if escapes {
+					target = filepath.Join(t.TempDir(), "unrelated")
+					if err := os.WriteFile(target, []byte("old-openarbi"), 0755); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if err := os.Symlink(target, filepath.Join(release, "bundle/link")); err != nil {
+					t.Fatal(err)
+				}
+				receipt.Entries["bundle/link"] = legacyEntry{Link: target}
+				if schema == 1 {
+					receipt.Checksums = map[string]string{}
+					for name, entry := range receipt.Entries {
+						if entry.SHA256 != "" {
+							receipt.Checksums[name] = entry.SHA256
+						}
+					}
+					receipt.Checksums["bundle/link"] = receipt.Entries["bundle/openarbi"].SHA256
+				}
+				raw, err = json.Marshal(receipt)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(receiptPath, raw, 0600); err != nil {
+					t.Fatal(err)
+				}
+				got, err := inspectLegacy(root)
+				if escapes {
+					if err == nil {
+						t.Fatal("legacy receipt allowed a link outside the release")
+					}
+				} else if err != nil || got == nil {
+					t.Fatalf("valid legacy receipt beneath aliased parent rejected: %v", err)
+				}
+			})
+		}
+	}
+}
+
+func TestMigrationJournalDoesNotActivateSymlinkedRelease(t *testing.T) {
+	root := filepath.Join(aliasedTempDir(t), "install")
+	prefix := filepath.Join(t.TempDir(), "old")
+	old := legacyFixture(t, prefix)
+	stage := filepath.Join(root, "releases/new")
+	if err := os.MkdirAll(filepath.Dir(stage), 0700); err != nil {
+		t.Fatal(err)
+	}
+	outside := t.TempDir()
+	if err := os.Symlink(outside, stage); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("releases/new", filepath.Join(root, "current")); err != nil {
+		t.Fatal(err)
+	}
+	name := filepath.Join(prefix, "bin/openarbi")
+	previous := filepath.Join(prefix, "current/bundle/openarbi")
+	target := filepath.Join(root, "current/bin/openarbi")
+	if err := writeMigrationJournal(root, stage, map[string]string{name: previous}, map[string]string{name: target}); err != nil {
+		t.Fatal(err)
+	}
+	if err := recoverMigration(root); err != nil {
+		t.Fatal(err)
+	}
+	if got := resolvedPath(t, name); got != resolvedPath(t, filepath.Join(old, "bundle/openarbi")) {
+		t.Fatalf("journal activated a release symlink outside the managed directory: %s", got)
 	}
 }

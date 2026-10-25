@@ -168,3 +168,13 @@ bundle, private configuration, recovery material, build artifact or provider
 credentials is included. Release construction includes an archive of this public
 repository only. The desktop release remains unpublished pending live platform
 and backend acceptance.
+
+## macOS acceptance fixes (2026-10-25)
+
+New public sources: `openarbi/macos-launcher.c`,
+`openarbi/test_macos_bundle.py`, `client/internal/install/mac_links.go`, and
+`client/internal/install/mac_links_test.go`. Existing builder/installer tests and
+public documentation are updated for native macOS packaging, exact pinned
+framework links, path aliases and two historical managed LaunchAgent templates.
+Fixtures contain synthetic data only; no private configuration or recovery
+material is copied. Acceptance evidence excludes identities and credentials.
