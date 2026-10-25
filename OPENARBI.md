@@ -38,5 +38,10 @@ construction uses locked upstream artifacts and a clean public checkout;
 macOS builds require a Mac for application signing and acceptance testing.
 
 The bundled Shadow Fiend artwork and exact palette were supplied for this
-application. JetBrains Mono includes its OFL license. Distribution retains
+application. The theme sets `background_opacity 0.90`, a 30% background-color tint
+for 70% artwork contribution, and `background_blur 20`. Kitty's tint is a color
+blend, not an independent image-opacity setting: opaque artwork pixels remain
+opaque even with the background-opacity setting below one. Kitty uses 20 as the
+blur radius on macOS; KDE supplies its own blur effect. GNOME does not provide
+Kitty's native blur effect. JetBrains Mono includes its OFL license. Distribution retains
 Kitty, Codex and Starship licenses and corresponding Kitty source.
