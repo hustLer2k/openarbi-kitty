@@ -1,0 +1,4 @@
+{
+  "name": "fixture-room",
+  "idempotency_key": "fixture-create-key"
+}

@@ -1,0 +1,19 @@
+{
+  "version": "1",
+  "max_prompt_bytes": 32768,
+  "max_history_bytes": 4194304,
+  "max_snapshot_bytes": 8388608,
+  "profiles": [
+    {
+      "id": "code",
+      "name": "Code",
+      "modes": [
+        "native"
+      ],
+      "read_only": false
+    }
+  ],
+  "command_kinds": [
+    "prompt"
+  ]
+}

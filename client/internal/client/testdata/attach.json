@@ -1,0 +1,11 @@
+{
+  "room_id": "0123456789abcdef0123456789abcdef",
+  "thread_id": "12345678-aaaa-bbbb-cccc-123456789abc",
+  "workspace": "/workspace/project",
+  "codex_version": "0.164.0",
+  "ssh_address": "127.0.0.1:2222",
+  "ssh_host_key": "fixture-host-key-not-valid",
+  "ticket": "fixture-ticket-not-valid",
+  "ticket_expires_at": "2026-10-25T01:01:00Z",
+  "websocket_token": "fixture-bearer-not-valid"
+}

@@ -1,0 +1,9 @@
+{
+  "source_kind": "local",
+  "session_id": "fixture-session",
+  "thread_id": "fixture-thread",
+  "turn_id": "fixture-turn",
+  "kind": "final",
+  "text": "Finished fixture task",
+  "parse_mode": "HTML"
+}

@@ -1,0 +1,16 @@
+{
+  "id": "0123456789abcdef0123456789abcdef",
+  "team_id": "fixture-team",
+  "name": "fixture-room",
+  "owner_id": "fixture-owner",
+  "provider": "codex",
+  "desired_state": "running",
+  "state": "ready",
+  "generation": 2,
+  "thread_id": "12345678-aaaa-bbbb-cccc-123456789abc",
+  "pod_name": "fixture-pod",
+  "pod_uid": "fixture-uid",
+  "reason": "fixture reason",
+  "created_at": "2026-10-25T00:00:00Z",
+  "updated_at": "2026-10-25T01:00:00Z"
+}
