@@ -633,6 +633,13 @@ func CurrentRelease(root string) (string, error) {
 	if !exists || string(raw) != marker {
 		return "", errors.New("installation is not managed by OpenArbi")
 	}
+	// Darwin's /var and /tmp (and user-selected parent directories) may be
+	// aliases. Compare both sides in the same namespace, but do not resolve the
+	// releases directory separately: redirecting it outside the root is invalid.
+	root, err = filepath.EvalSymlinks(root)
+	if err != nil {
+		return "", err
+	}
 	current, err := filepath.EvalSymlinks(filepath.Join(root, "current"))
 	if err != nil {
 		return "", err
