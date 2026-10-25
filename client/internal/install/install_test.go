@@ -297,3 +297,50 @@ func TestStartupFailureRollsBackAndRestartsOld(t *testing.T) {
 		t.Fatal("lifecycle rollback did not run")
 	}
 }
+
+func TestCurrentReleaseAcceptsAliasedParentAndRejectsEscapes(t *testing.T) {
+	archive, sum := payload(t)
+	base := t.TempDir()
+	parent := filepath.Join(base, "real parent")
+	if err := os.Mkdir(parent, 0700); err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(base, "aliased parent")
+	if err := os.Symlink(parent, alias); err != nil {
+		t.Fatal(err)
+	}
+	o := Options{Root: filepath.Join(alias, "install"), Bin: filepath.Join(alias, "bin/openarbi"), Version: "v1.0.0", SHA256: sum}
+	installed, err := InstallArchive(t.Context(), o, archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := CurrentRelease(o.Root)
+	if err != nil || got != resolvedPath(t, installed) {
+		t.Fatalf("aliased installation rejected: %v", err)
+	}
+	outside := t.TempDir()
+	if err = os.Remove(filepath.Join(o.Root, "current")); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.Symlink(outside, filepath.Join(o.Root, "current")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = CurrentRelease(o.Root); err == nil {
+		t.Fatal("current outside managed root accepted")
+	}
+	if err = os.Remove(filepath.Join(o.Root, "current")); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.Rename(filepath.Join(o.Root, "releases"), filepath.Join(outside, "releases")); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.Symlink(filepath.Join(outside, "releases"), filepath.Join(o.Root, "releases")); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.Symlink(filepath.Join("releases", filepath.Base(installed)), filepath.Join(o.Root, "current")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = CurrentRelease(o.Root); err == nil {
+		t.Fatal("redirected releases directory outside managed root accepted")
+	}
+}
