@@ -13,7 +13,36 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
+
+type cancelAfterReadTransport struct {
+	base      http.RoundTripper
+	cancel    context.CancelFunc
+	bytesRead int
+}
+
+func (t *cancelAfterReadTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	response, err := t.base.RoundTrip(r)
+	if err == nil {
+		response.Body = &cancelAfterReadBody{ReadCloser: response.Body, transport: t}
+	}
+	return response, err
+}
+
+type cancelAfterReadBody struct {
+	io.ReadCloser
+	transport *cancelAfterReadTransport
+}
+
+func (b *cancelAfterReadBody) Read(p []byte) (int, error) {
+	n, err := b.ReadCloser.Read(p)
+	if n > 0 {
+		b.transport.bytesRead += n
+		b.transport.cancel()
+	}
+	return n, err
+}
 
 // Exercise failures after receiving actual TLS response bytes, rather than
 // cancelling before a request is dispatched. Trust only this test server's CA;
@@ -31,7 +60,7 @@ func TestHTTPSDownloadFailuresPreservePreviousInstallation(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			ctx, cancel := context.WithCancel(t.Context())
+			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 			defer cancel()
 			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Length", fmt.Sprint(len(data)))
@@ -42,7 +71,6 @@ func TestHTTPSDownloadFailuresPreservePreviousInstallation(t *testing.T) {
 				_, _ = w.Write(data[:len(data)/2])
 				w.(http.Flusher).Flush()
 				if mode == "cancelled-midstream" {
-					cancel()
 					<-r.Context().Done()
 				}
 				// Returning with an incomplete Content-Length closes the stream.
@@ -54,6 +82,10 @@ func TestHTTPSDownloadFailuresPreservePreviousInstallation(t *testing.T) {
 			transport.TLSClientConfig = &tls.Config{RootCAs: roots, MinVersion: tls.VersionTLS12}
 			previousTransport := http.DefaultTransport
 			http.DefaultTransport = transport
+			cancelOnRead := &cancelAfterReadTransport{base: transport, cancel: cancel}
+			if mode == "cancelled-midstream" {
+				http.DefaultTransport = cancelOnRead
+			}
 			t.Cleanup(func() {
 				http.DefaultTransport = previousTransport
 				transport.CloseIdleConnections()
@@ -73,6 +105,9 @@ func TestHTTPSDownloadFailuresPreservePreviousInstallation(t *testing.T) {
 					t.Fatalf("expected interrupted response body, got %v", err)
 				}
 			case "cancelled-midstream":
+				if cancelOnRead.bytesRead == 0 {
+					t.Fatal("client cancellation occurred without consuming response body bytes")
+				}
 				if !errors.Is(err, context.Canceled) {
 					t.Fatalf("expected cancellation after response began, got %v", err)
 				}
