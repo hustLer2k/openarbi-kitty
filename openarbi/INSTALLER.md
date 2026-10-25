@@ -117,3 +117,31 @@ the installer, or disable Gatekeeper. A supported distribution/signing or
 explicit per-app approval procedure must be established and tested before
 publishing or pinning a desktop release. Actual published HTTPS download
 acceptance remains outstanding.
+
+### Personal-build approval acceptance procedure
+
+Apple documents a per-app exception in
+[Safely open apps on your Mac](https://support.apple.com/en-us/102445): after an
+attempt to open trusted software is blocked, use **System Settings → Privacy &
+Security → Open Anyway**, then confirm **Open**. This does not notarize the build.
+Do not use this procedure for a damaged-app or malware warning.
+
+The following is a test procedure, not a completed OpenArbi acceptance result:
+
+1. Download the exact candidate installer, payload and `SHA256SUMS` through a
+   browser over HTTPS into a persistent directory such as Downloads. Compare
+   `shasum -a 256` for both artifacts with the recorded candidate checksums;
+   retain quarantine metadata. Checksums alone do not establish publisher trust.
+2. Make the verified installer executable with `chmod u+x`, then invoke that
+   exact file with `--help`. If blocked, use Apple's per-app approval above and
+   retry the same file. If approval is unavailable or execution remains blocked,
+   record the failure; do not change global security settings.
+3. Run the approved installer with `--version`, `--archive` (the downloaded
+   payload path), `--sha256` (its verified digest), and `--no-connect`. Open
+   `~/Applications/OpenArbi.app`; if blocked, separately approve that app through
+   the same settings. Record each actual result and complete native acceptance.
+
+Use persistent files for this test: `install.sh` removes its temporary installer
+on exit, so rerunning it is not a reliable way to approve the same downloaded
+file. No bootstrap approval automation is provided. Publication and a bootstrap
+pin still require successful real-download and backend acceptance.
