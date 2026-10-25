@@ -17,6 +17,8 @@ case $(uname -s) in
   Darwin) desktop_dir=${OPENARBI_DESKTOP_DIR:-$HOME/Library/Application Support/OpenArbi/desktop} ;;
   *) printf '%s\n' 'OpenArbi supports Linux and macOS.' >&2; exit 1 ;;
 esac
+# Keep window/font caches separate from an independently installed Kitty.
+export KITTY_CACHE_DIRECTORY="$desktop_dir/kitty-cache"
 # Preserve operational subcommands used by the shareholder hooks.
 case ${1:-} in
   shareholder|login|logout|rooms|create|attach|queue|stop|resume|members)

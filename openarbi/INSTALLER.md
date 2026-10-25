@@ -105,3 +105,15 @@ reconnect, update and uninstall. Then pin the tested exact version in bootstrap
 and verify its actual public download. Current fixture tests do not install on
 the operator's computer. Atomic activation protects against process interruption,
 not sudden disk/machine failure. macOS build/runtime acceptance needs Mac access.
+
+## macOS distribution gate
+
+Local ad-hoc builds are not notarized distributions. On macOS 15.6, a Safari
+download of the native installer (loopback HTTP acceptance server) retained
+quarantine, matched the release checksum, and was killed by macOS on execution.
+`spctl --assess` also rejected the installed ad-hoc app. Do not treat local
+command-line launch success as downloaded-file acceptance, strip quarantine in
+the installer, or disable Gatekeeper. A supported distribution/signing or
+explicit per-app approval procedure must be established and tested before
+publishing or pinning a desktop release. Actual published HTTPS download
+acceptance remains outstanding.
