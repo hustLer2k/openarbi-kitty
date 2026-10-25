@@ -1,0 +1,41 @@
+{
+  "kitty": {
+    "version": "0.43.1",
+    "revision": "7f24dd68c98d8f4712457560f25e8056cce52ec8",
+    "repository": "https://github.com/kovidgoyal/kitty",
+    "packages": {
+      "linux-amd64": {
+        "url": "https://github.com/kovidgoyal/kitty/releases/download/v0.43.1/kitty-0.43.1-x86_64.txz",
+        "sha256": "f2026ef8cec6fd21b58e3ae501f707c2fc922ddb9b3e79685917fc60197449fb"
+      },
+      "darwin-arm64": {
+        "url": "https://github.com/kovidgoyal/kitty/releases/download/v0.43.1/kitty-0.43.1.dmg",
+        "sha256": "e36d8f0f3cbaa7b49e4fb9eca5eb3f17d2d7de4666c08cf71b69a79b6ea987aa"
+      }
+    }
+  },
+  "artwork": {
+    "file": "assets/shadow-fiend.png",
+    "sha256": "ebdf548cd1f2e736d4ebb2602848f0553835e16b0d1e32d21cba074e11986640",
+    "source": "User-supplied Ghostty Shadow Fiend artwork, preserved unchanged."
+  },
+  "starship": {
+    "version": "1.27.0",
+    "packages": {
+      "linux-amd64": {
+        "url": "https://github.com/starship/starship/releases/download/v1.27.0/starship-x86_64-unknown-linux-musl.tar.gz",
+        "sha256": "10c8eb4cb3b761d9bf59ea828444c2dab36c900b7d69a69e08814b286969df89"
+      },
+      "darwin-arm64": {
+        "url": "https://github.com/starship/starship/releases/download/v1.27.0/starship-aarch64-apple-darwin.tar.gz",
+        "sha256": "5362da8cb2928f98f3ce0ffda697cf0f8de70081db000dae316d6d3a404f6cf0"
+      }
+    }
+  },
+  "fonts": {
+    "version": "2.304",
+    "url": "https://github.com/JetBrains/JetBrainsMono/releases/download/v2.304/JetBrainsMono-2.304.zip",
+    "sha256": "6f6376c6ed2960ea8a963cd7387ec9d76e3f629125bc33d1fdcd7eb7012f7bbf",
+    "license": "assets/fonts/OFL.txt"
+  }
+}

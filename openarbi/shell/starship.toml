@@ -1,0 +1,18 @@
+add_newline = false
+format = "$directory$git_branch$git_status$status$character"
+command_timeout = 500
+[directory]
+style = "bold #e6e3e4"
+truncation_length = 3
+[git_branch]
+format = "[$branch]($style) "
+style = "#bd98bd"
+[git_status]
+style = "#d5b38c"
+[status]
+disabled = false
+format = "[$status]($style) "
+style = "bold #e56875"
+[character]
+success_symbol = "[❯](#ed5b67)"
+error_symbol = "[❯](bold #e56875)"

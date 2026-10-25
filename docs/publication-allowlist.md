@@ -99,3 +99,72 @@ credential patterns, private configuration, and unreviewed binaries/archives.
 A source allowlist and synthetic fixtures supplement independent review; they do
 not replace it. Keep the private CLI until worker packaging consumes a pinned
 public artifact and its publication/continuation checks pass.
+
+## Desktop integration publication (2026-10-25)
+
+The following newly authored paths are allowlisted after independent review.
+They contain no private backend packages, deployment state or credentials.
+The existing public `client/cmd/openarbi/main.go` adds private Unix-socket routing
+only. Test secrets are synthetic; tests never read the operator's credentials.
+
+- `OPENARBI.md`
+- `client/cmd/openarbi-desktop/main.go`
+- `client/cmd/openarbi-desktop/main_test.go`
+- `client/cmd/openarbi-installer/legacy_tunnel.go`
+- `client/cmd/openarbi-installer/legacy_tunnel_test.go`
+- `client/cmd/openarbi-installer/main.go`
+- `client/cmd/openarbi-installer/main_test.go`
+- `client/cmd/openarbi-installer/upgrade.go`
+- `client/cmd/openarbi-installer/upgrade_test.go`
+- `client/internal/client/desktop.go`
+- `client/internal/client/desktop_test.go`
+- `client/internal/desktop/rooms.go`
+- `client/internal/desktop/rooms_test.go`
+- `client/internal/desktop/socket.go`
+- `client/internal/desktop/socket_test.go`
+- `client/internal/desktop/store.go`
+- `client/internal/desktop/tunnel.go`
+- `client/internal/desktop/tunnel_test.go`
+- `client/internal/desktop/workspace.go`
+- `client/internal/desktop/workspace_test.go`
+- `client/internal/install/install.go`
+- `client/internal/install/install_test.go`
+- `client/internal/install/legacy.go`
+- `client/internal/install/legacy_test.go`
+- `client/internal/install/migration_journal.go`
+- `client/internal/install/path.go`
+- `client/internal/install/path_test.go`
+- `client/internal/install/release.go`
+- `client/internal/install/release_test.go`
+- `install.sh`
+- `openarbi/INSTALLER.md`
+- `openarbi/assets/fonts/JetBrainsMono-Bold.ttf`
+- `openarbi/assets/fonts/JetBrainsMono-BoldItalic.ttf`
+- `openarbi/assets/fonts/JetBrainsMono-Italic.ttf`
+- `openarbi/assets/fonts/JetBrainsMono-Regular.ttf`
+- `openarbi/assets/fonts/OFL.txt`
+- `openarbi/assets/ready.wav`
+- `openarbi/assets/shadow-fiend.png`
+- `openarbi/build-release.py`
+- `openarbi/codex.lock.json`
+- `openarbi/desktop.py`
+- `openarbi/fonts.conf`
+- `openarbi/launch.sh`
+- `openarbi/picker.py`
+- `openarbi/shell/bashrc`
+- `openarbi/shell/launch.sh`
+- `openarbi/shell/starship.toml`
+- `openarbi/shell/zsh/.zshrc`
+- `openarbi/test_desktop.py`
+- `openarbi/theme/kitty.conf`
+- `openarbi/upstream.lock.json`
+
+`openarbi/codex.lock.json` contains public npm artifact URLs and published
+integrity hashes only. The original user-supplied PNG is copied byte-for-byte
+(SHA-256 `ebdf548cd1f2e736d4ebb2602848f0553835e16b0d1e32d21cba074e11986640`).
+JetBrains Mono font files and OFL text are verified against the locked upstream
+2.304 archive; the completion WAV was generated for this application. No Git
+bundle, private configuration, recovery material, build artifact or provider
+credentials is included. Release construction includes an archive of this public
+repository only. The desktop release remains unpublished pending live platform
+and backend acceptance.

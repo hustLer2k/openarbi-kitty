@@ -1,0 +1,10 @@
+# Loaded only by OpenArbi's local-shell tab.
+if [ -f "$HOME/.bashrc" ]; then . "$HOME/.bashrc"; fi
+: "${OPENARBI_BUNDLE_DIR:?OpenArbi installation directory is required}"
+export STARSHIP_CONFIG="$OPENARBI_BUNDLE_DIR/share/openarbi/shell/starship.toml"
+if openarbi_prompt_init=$("$OPENARBI_BUNDLE_DIR/bin/starship" init bash); then
+  eval "$openarbi_prompt_init"
+else
+  printf '%s\n' 'OpenArbi could not initialize its bundled prompt; repair or update the installation.' >&2
+fi
+unset openarbi_prompt_init

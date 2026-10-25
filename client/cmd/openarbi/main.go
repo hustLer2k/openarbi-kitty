@@ -14,6 +14,7 @@ import (
 	"syscall"
 
 	"github.com/hustLer2k/openarbi-kitty/client/internal/client"
+	"github.com/hustLer2k/openarbi-kitty/client/internal/desktop"
 	"github.com/hustLer2k/openarbi-kitty/client/internal/terminaltext"
 	"golang.org/x/term"
 )
@@ -31,6 +32,7 @@ func main() {
 func run() (resultErr error) {
 	flags := flag.NewFlagSet("openarbi", flag.ContinueOnError)
 	server := flags.String("server", "", "OpenArbi API origin (HTTPS outside localhost)")
+	desktopSocket := flags.String("desktop-socket", "", "private desktop broker socket")
 	testToken := flags.Bool("test-token-env", false, "read OPENARBI_TEST_TOKEN instead of OS credentials (isolated testing only)")
 	flags.Usage = func() {
 		fmt.Fprintln(flags.Output(), "Usage: openarbi [flags] [create|rooms|attach|queue|stop|resume|members|shareholder|login|logout]\n\nWithout a subcommand, opens the native room launcher.\nQueue server-side follow-ups with: openarbi queue ROOM \"MESSAGE\".\nNative Codex Tab follow-ups are local to that client.\nLogin reads a token without echo and validates it before saving to the OS credential store.\nClosing the terminal leaves cloud work running.")
@@ -94,7 +96,11 @@ func run() (resultErr error) {
 			}
 			token = strings.TrimSpace(scanner.Text())
 		}
-		api, err := client.New(origin, token, nil)
+		transport := desktop.SocketHTTP(*desktopSocket)
+		if *desktopSocket == "" {
+			transport = nil
+		}
+		api, err := client.New(origin, token, transport)
 		if err != nil {
 			return err
 		}
@@ -119,7 +125,11 @@ func run() (resultErr error) {
 			return err
 		}
 	}
-	api, err := client.New(origin, token, nil)
+	transport := desktop.SocketHTTP(*desktopSocket)
+	if *desktopSocket == "" {
+		transport = nil
+	}
+	api, err := client.New(origin, token, transport)
 	if err != nil {
 		return err
 	}
